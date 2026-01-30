@@ -1007,6 +1007,8 @@ class TorchForecastingModel(GlobalForecastingModel, ABC):
         if not isinstance(val_sample_weight, str):
             val_sample_weight = series2seq(val_sample_weight)
 
+        # TODO: verify that series, past_covs, future_covs, static_covs have same dtype.
+
         self.encoders = self.initialize_encoders()
         if self.encoders.encoding_available:
             past_covariates, future_covariates = self.generate_fit_encodings(
