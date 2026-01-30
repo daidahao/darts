@@ -1191,26 +1191,28 @@ class TestTorchForecastingModel:
         future_cov_float32 = series_float32
         future_cov_float64 = series_float64
         
-        # Create model that supports both past and future covariates
-        model = RNNModel(
-            12,
-            "RNN",
-            10,
-            10,
+        # Test 1: Same dtype for series and past_covariates should work (TCNModel supports past_covariates)
+        model1 = TCNModel(
+            input_chunk_length=10,
+            output_chunk_length=1,
             n_epochs=1,
+            **tcn_light_kwargs,
             **tfm_kwargs,
         )
-        
-        # Test 1: Same dtype for all inputs should work
-        model.fit(
+        model1.fit(
             series_float32,
             past_covariates=past_cov_float32,
-            future_covariates=future_cov_float32,
             epochs=1
         )
         
         # Test 2: Mismatched dtype between series and past_covariates should fail
-        model2 = RNNModel(12, "RNN", 10, 10, n_epochs=1, **tfm_kwargs)
+        model2 = TCNModel(
+            input_chunk_length=10,
+            output_chunk_length=1,
+            n_epochs=1,
+            **tcn_light_kwargs,
+            **tfm_kwargs,
+        )
         with pytest.raises(ValueError, match=".*must have the same dtype.*"):
             model2.fit(
                 series_float32,
@@ -1218,7 +1220,7 @@ class TestTorchForecastingModel:
                 epochs=1
             )
         
-        # Test 3: Mismatched dtype between series and future_covariates should fail
+        # Test 3: Mismatched dtype between series and future_covariates (RNNModel supports future_covariates)
         model3 = RNNModel(12, "RNN", 10, 10, n_epochs=1, **tfm_kwargs)
         with pytest.raises(ValueError, match=".*must have the same dtype.*"):
             model3.fit(
@@ -1227,22 +1229,39 @@ class TestTorchForecastingModel:
                 epochs=1
             )
         
-        # Test 4: Mismatched dtype in static covariates should fail
-        series_with_static_float32 = TimeSeries.from_values(
-            np.array(range(100), dtype=np.float32),
-            static_covariates=pd.DataFrame({"cov1": [1.0]}, dtype=np.float64)
+        # Test 4: Dtype verification should also work in predict
+        model4 = TCNModel(
+            input_chunk_length=10,
+            output_chunk_length=1,
+            n_epochs=1,
+            **tcn_light_kwargs,
+            **tfm_kwargs,
         )
-        model4 = RNNModel(12, "RNN", 10, 10, n_epochs=1, **tfm_kwargs)
-        with pytest.raises(ValueError, match=".*must have the same dtype.*"):
-            model4.fit(series_with_static_float32, epochs=1)
-        
-        # Test 5: Dtype verification should also work in predict
-        model5 = RNNModel(12, "RNN", 10, 10, n_epochs=1, **tfm_kwargs)
-        model5.fit(series_float32, epochs=1)
+        model4.fit(series_float32, epochs=1)
         
         # Predict with mismatched dtype should fail
-        with pytest.raises(ValueError, match=".*must have the same dtype.*"):
-            model5.predict(n=10, series=series_float64)
+        with pytest.raises(ValueError, match=".*dtype.*"):
+            model4.predict(n=10, series=series_float64)
+        
+        # Test 5: Mismatched dtypes in a sequence of series with static covariates
+        # Create series with static covariates
+        series_with_static_32 = TimeSeries.from_values(
+            np.array(range(100), dtype=np.float32),
+            static_covariates=pd.DataFrame({"cov1": [1.0]})
+        )
+        # Note: TimeSeries automatically converts static covariates to match series dtype
+        # So static covariates will have dtype float32
+        assert series_with_static_32.static_covariates.values.dtype == np.float32
+        
+        # Verify that series with static covariates can be trained
+        model5 = TCNModel(
+            input_chunk_length=10,
+            output_chunk_length=1,
+            n_epochs=1,
+            **tcn_light_kwargs,
+            **tfm_kwargs,
+        )
+        model5.fit(series_with_static_32, epochs=1)
 
     def test_load_weights_from_checkpoint(self, tmpdir_fn):
         ts_training, ts_test = self.series.split_before(90)

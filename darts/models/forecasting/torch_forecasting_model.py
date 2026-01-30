@@ -755,9 +755,21 @@ class TorchForecastingModel(GlobalForecastingModel, ABC):
         series: Sequence[TimeSeries],
         past_covariates: Optional[Sequence[TimeSeries]],
         future_covariates: Optional[Sequence[TimeSeries]],
+        check_input_against_training: bool = False,
     ):
         """
         Verify that series, past_covariates, future_covariates, and static_covariates all have the same dtype.
+        
+        Parameters
+        ----------
+        series
+            The target series.
+        past_covariates
+            Optionally, the past-observed covariates.
+        future_covariates
+            Optionally, the future-known covariates.
+        check_input_against_training
+            If True, also verify that inputs match the dtype used during training (from train_sample).
         """
         # Get the reference dtype from the series
         reference_dtype = get_single_series(series).dtype
@@ -794,6 +806,20 @@ class TorchForecastingModel(GlobalForecastingModel, ABC):
                 ),
                 logger=logger,
             )
+        
+        # Additionally check against training dtype if requested (during predict)
+        if check_input_against_training and self.train_sample is not None:
+            training_dtype = self.train_sample[0].dtype
+            if reference_dtype != training_dtype:
+                raise_log(
+                    ValueError(
+                        f"The dtype of the input series ({reference_dtype}) does not match "
+                        f"the dtype used during training ({training_dtype}). "
+                        f"Please cast the input series to {training_dtype} using "
+                        f"`.astype()` method, e.g., `series.astype(np.{training_dtype})`."
+                    ),
+                    logger=logger,
+                )
 
     def _update_covariates_use(self):
         """Based on the Forecasting class and the training_sample attribute, update the
@@ -1745,6 +1771,7 @@ class TorchForecastingModel(GlobalForecastingModel, ABC):
             series=series,
             past_covariates=past_covariates,
             future_covariates=future_covariates,
+            check_input_against_training=True,
         )
 
         # encoders are set when calling fit(), but not when calling fit_from_dataset()
