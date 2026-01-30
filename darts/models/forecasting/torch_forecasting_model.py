@@ -729,9 +729,9 @@ class TorchForecastingModel(GlobalForecastingModel, ABC):
 
     def _verify_static_covariates_dtype(
         self, series: Sequence[TimeSeries]
-    ) -> Optional[type]:
+    ) -> Optional[np.dtype]:
         """
-        Verify that static covariates (if present) have the same dtype as the series values.
+        Verify that all static covariates have the same dtype across all series.
         Returns the dtype of static covariates if they exist and are consistent, None otherwise.
         """
         static_dtype = None
@@ -771,23 +771,30 @@ class TorchForecastingModel(GlobalForecastingModel, ABC):
         check_input_against_training
             If True, also verify that inputs match the dtype used during training (from train_sample).
         """
-        # Get the reference dtype from the series
+        # Get the reference dtype from the first series
         reference_dtype = get_single_series(series).dtype
         mismatched_inputs = []
 
+        # Check that all series have the same dtype
+        for i, ts in enumerate(series):
+            if ts.dtype != reference_dtype:
+                mismatched_inputs.append(f"`series[{i}]` (dtype: {ts.dtype})")
+
         # Check past_covariates
         if past_covariates is not None:
-            past_cov_dtype = get_single_series(past_covariates).dtype
-            if past_cov_dtype != reference_dtype:
-                mismatched_inputs.append(f"`past_covariates` (dtype: {past_cov_dtype})")
+            for i, cov_ts in enumerate(past_covariates):
+                if cov_ts.dtype != reference_dtype:
+                    mismatched_inputs.append(
+                        f"`past_covariates[{i}]` (dtype: {cov_ts.dtype})"
+                    )
 
         # Check future_covariates
         if future_covariates is not None:
-            future_cov_dtype = get_single_series(future_covariates).dtype
-            if future_cov_dtype != reference_dtype:
-                mismatched_inputs.append(
-                    f"`future_covariates` (dtype: {future_cov_dtype})"
-                )
+            for i, cov_ts in enumerate(future_covariates):
+                if cov_ts.dtype != reference_dtype:
+                    mismatched_inputs.append(
+                        f"`future_covariates[{i}]` (dtype: {cov_ts.dtype})"
+                    )
 
         # Check static_covariates
         static_dtype = self._verify_static_covariates_dtype(series)
@@ -798,7 +805,7 @@ class TorchForecastingModel(GlobalForecastingModel, ABC):
             raise_log(
                 ValueError(
                     f"All series, covariates, and static covariates must have the same dtype. "
-                    f"Found `series` with dtype {reference_dtype}, but {', '.join(mismatched_inputs)} "
+                    f"Found `series[0]` with dtype {reference_dtype}, but {', '.join(mismatched_inputs)} "
                     f"have different dtypes. Please cast all inputs to the same dtype using "
                     f"`.astype()` method, e.g., `series.astype(np.float32)`."
                 ),
@@ -1099,13 +1106,6 @@ class TorchForecastingModel(GlobalForecastingModel, ABC):
         if not isinstance(val_sample_weight, str):
             val_sample_weight = series2seq(val_sample_weight)
 
-        # Verify that series, past_covariates, future_covariates, and static_covariates have same dtype
-        self._verify_dtypes(
-            series=series,
-            past_covariates=past_covariates,
-            future_covariates=future_covariates,
-        )
-
         self.encoders = self.initialize_encoders()
         if self.encoders.encoding_available:
             past_covariates, future_covariates = self.generate_fit_encodings(
@@ -1113,6 +1113,15 @@ class TorchForecastingModel(GlobalForecastingModel, ABC):
                 past_covariates=past_covariates,
                 future_covariates=future_covariates,
             )
+
+        # Verify that series, past_covariates, future_covariates, and static_covariates have same dtype
+        # This check is done after encoder generation to ensure encoders don't introduce dtype mismatches
+        self._verify_dtypes(
+            series=series,
+            past_covariates=past_covariates,
+            future_covariates=future_covariates,
+        )
+
         self._verify_past_future_covariates(
             past_covariates=past_covariates, future_covariates=future_covariates
         )
@@ -1764,14 +1773,6 @@ class TorchForecastingModel(GlobalForecastingModel, ABC):
         if self.uses_static_covariates:
             self._verify_static_covariates(get_single_series(series).static_covariates)
 
-        # Verify dtypes consistency
-        self._verify_dtypes(
-            series=series,
-            past_covariates=past_covariates,
-            future_covariates=future_covariates,
-            check_input_against_training=True,
-        )
-
         # encoders are set when calling fit(), but not when calling fit_from_dataset()
         # when covariates are loaded from model, they already contain the encodings: this is not a problem as the
         # encoders regenerate the encodings
@@ -1782,6 +1783,16 @@ class TorchForecastingModel(GlobalForecastingModel, ABC):
                 past_covariates=past_covariates,
                 future_covariates=future_covariates,
             )
+
+        # Verify dtypes consistency after encoder generation to catch any dtype mismatches
+        # introduced by encoders or the user-provided inputs
+        self._verify_dtypes(
+            series=series,
+            past_covariates=past_covariates,
+            future_covariates=future_covariates,
+            check_input_against_training=True,
+        )
+
         super().predict(
             n,
             series,

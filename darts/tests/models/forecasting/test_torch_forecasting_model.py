@@ -1230,8 +1230,8 @@ class TestTorchForecastingModel:
         with pytest.raises(ValueError, match=".*dtype.*"):
             model4.predict(n=10, series=series_float64)
 
-        # Test 5: Mismatched dtypes in a sequence of series with static covariates
-        # Create series with static covariates
+        # Test 5: Verify series with static covariates (matching dtypes) can be trained
+        # Note: TimeSeries automatically converts static covariates to match series dtype
         series_with_static_32 = TimeSeries.from_values(
             np.array(range(100), dtype=np.float32),
             static_covariates=pd.DataFrame({"cov1": [1.0]}),
