@@ -759,7 +759,7 @@ class TorchForecastingModel(GlobalForecastingModel, ABC):
     ):
         """
         Verify that series, past_covariates, future_covariates, and static_covariates all have the same dtype.
-        
+
         Parameters
         ----------
         series
@@ -779,9 +779,7 @@ class TorchForecastingModel(GlobalForecastingModel, ABC):
         if past_covariates is not None:
             past_cov_dtype = get_single_series(past_covariates).dtype
             if past_cov_dtype != reference_dtype:
-                mismatched_inputs.append(
-                    f"`past_covariates` (dtype: {past_cov_dtype})"
-                )
+                mismatched_inputs.append(f"`past_covariates` (dtype: {past_cov_dtype})")
 
         # Check future_covariates
         if future_covariates is not None:
@@ -806,7 +804,7 @@ class TorchForecastingModel(GlobalForecastingModel, ABC):
                 ),
                 logger=logger,
             )
-        
+
         # Additionally check against training dtype if requested (during predict)
         if check_input_against_training and self.train_sample is not None:
             training_dtype = self.train_sample[0].dtype
