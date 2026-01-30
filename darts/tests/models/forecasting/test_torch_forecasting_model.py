@@ -1179,6 +1179,71 @@ class TestTorchForecastingModel:
             preds = model.predict(n=10)
             assert preds.dtype == np.float32
 
+    def test_dtype_verification(self):
+        """Test that dtype mismatches between series, covariates, and static covariates are caught"""
+        # Create series with different dtypes
+        series_float32 = self.series.astype(np.float32)
+        series_float64 = self.series.astype(np.float64)
+        
+        # Create covariates with different dtypes
+        past_cov_float32 = series_float32
+        past_cov_float64 = series_float64
+        future_cov_float32 = series_float32
+        future_cov_float64 = series_float64
+        
+        # Create model that supports both past and future covariates
+        model = RNNModel(
+            12,
+            "RNN",
+            10,
+            10,
+            n_epochs=1,
+            **tfm_kwargs,
+        )
+        
+        # Test 1: Same dtype for all inputs should work
+        model.fit(
+            series_float32,
+            past_covariates=past_cov_float32,
+            future_covariates=future_cov_float32,
+            epochs=1
+        )
+        
+        # Test 2: Mismatched dtype between series and past_covariates should fail
+        model2 = RNNModel(12, "RNN", 10, 10, n_epochs=1, **tfm_kwargs)
+        with pytest.raises(ValueError, match=".*must have the same dtype.*"):
+            model2.fit(
+                series_float32,
+                past_covariates=past_cov_float64,
+                epochs=1
+            )
+        
+        # Test 3: Mismatched dtype between series and future_covariates should fail
+        model3 = RNNModel(12, "RNN", 10, 10, n_epochs=1, **tfm_kwargs)
+        with pytest.raises(ValueError, match=".*must have the same dtype.*"):
+            model3.fit(
+                series_float32,
+                future_covariates=future_cov_float64,
+                epochs=1
+            )
+        
+        # Test 4: Mismatched dtype in static covariates should fail
+        series_with_static_float32 = TimeSeries.from_values(
+            np.array(range(100), dtype=np.float32),
+            static_covariates=pd.DataFrame({"cov1": [1.0]}, dtype=np.float64)
+        )
+        model4 = RNNModel(12, "RNN", 10, 10, n_epochs=1, **tfm_kwargs)
+        with pytest.raises(ValueError, match=".*must have the same dtype.*"):
+            model4.fit(series_with_static_float32, epochs=1)
+        
+        # Test 5: Dtype verification should also work in predict
+        model5 = RNNModel(12, "RNN", 10, 10, n_epochs=1, **tfm_kwargs)
+        model5.fit(series_float32, epochs=1)
+        
+        # Predict with mismatched dtype should fail
+        with pytest.raises(ValueError, match=".*must have the same dtype.*"):
+            model5.predict(n=10, series=series_float64)
+
     def test_load_weights_from_checkpoint(self, tmpdir_fn):
         ts_training, ts_test = self.series.split_before(90)
         original_model_name = "original"
